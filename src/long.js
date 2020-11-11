@@ -117,8 +117,11 @@ var UINT_CACHE = {};
  * @inner
  */
 function fromInt(value, unsigned) {
+    // var TWO_PWR_24 = fromInt(TWO_PWR_24_DBL);
+    // Long { low: 16777216, high: 0, unsigned: false }
     var obj, cachedObj, cache;
     if (unsigned) {
+        // 无符号数
         value >>>= 0;
         if (cache = (0 <= value && value < 256)) {
             cachedObj = UINT_CACHE[value];
@@ -310,35 +313,35 @@ Long.fromValue = fromValue;
  * @const
  * @inner
  */
-var TWO_PWR_16_DBL = 1 << 16;
+var TWO_PWR_16_DBL = 1 << 16; // Math.pow(2,16) 65536
 
 /**
  * @type {number}
  * @const
  * @inner
  */
-var TWO_PWR_24_DBL = 1 << 24;
+var TWO_PWR_24_DBL = 1 << 24; // Math.pow(2,24) 16777216
 
 /**
  * @type {number}
  * @const
  * @inner
  */
-var TWO_PWR_32_DBL = TWO_PWR_16_DBL * TWO_PWR_16_DBL;
+var TWO_PWR_32_DBL = TWO_PWR_16_DBL * TWO_PWR_16_DBL; // Math.pow(2,32) 4294967296
 
 /**
  * @type {number}
  * @const
  * @inner
  */
-var TWO_PWR_64_DBL = TWO_PWR_32_DBL * TWO_PWR_32_DBL;
+var TWO_PWR_64_DBL = TWO_PWR_32_DBL * TWO_PWR_32_DBL; // Math.pow(2,64) 18446744073709552000
 
 /**
  * @type {number}
  * @const
  * @inner
  */
-var TWO_PWR_63_DBL = TWO_PWR_64_DBL / 2;
+var TWO_PWR_63_DBL = TWO_PWR_64_DBL / 2; // Math.pow(2,63)
 
 /**
  * @type {!Long}
@@ -346,7 +349,7 @@ var TWO_PWR_63_DBL = TWO_PWR_64_DBL / 2;
  * @inner
  */
 var TWO_PWR_24 = fromInt(TWO_PWR_24_DBL);
-
+// Long { low: 16777216, high: 0, unsigned: false }
 /**
  * @type {!Long}
  * @inner
