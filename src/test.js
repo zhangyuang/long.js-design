@@ -1,3 +1,4 @@
 const Long = require('./long')
 
-// Long.fromNumber(900000)
+const foo = Long.fromInt(-9, false)
+console.log(foo)

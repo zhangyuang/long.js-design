@@ -31,6 +31,8 @@ try {
  * @constructor
  */
 function Long(low, high, unsigned) {
+    // 数字-2147483648 和 2147483647 是32位有符号数字所能表示的最小和最大整数。
+    // -0x80000000 0x7fffffff
 
     /**
      * The low 32 bits as a signed value.
@@ -117,24 +119,29 @@ var UINT_CACHE = {};
  * @inner
  */
 function fromInt(value, unsigned) {
-    // var TWO_PWR_24 = fromInt(TWO_PWR_24_DBL);
+    // 32 位数转 long类型
     // Long { low: 16777216, high: 0, unsigned: false }
     var obj, cachedObj, cache;
     if (unsigned) {
         // 无符号数
-        value >>>= 0;
+        value >>>= 0; // 无符号右移，如果输入的是负数，则此处都会变为正数。-1>>>0 = 4294967295
         if (cache = (0 <= value && value < 256)) {
+            // 只缓存0-256之间的结果
             cachedObj = UINT_CACHE[value];
             if (cachedObj)
                 return cachedObj;
         }
-        obj = fromBits(value, (value | 0) < 0 ? -1 : 0, true);
+        // 这里｜0是因为位运算会转成32位有符号数补码在进行计算。
+        // 如果value大于2147483647则得到的结果为负数。相当于把本来的数字又给还原出来了
+        obj = fromBits(value, (value | 0) < 0 ? -1 : 0, true); 
         if (cache)
             UINT_CACHE[value] = obj;
         return obj;
     } else {
+        // 有符号数
         value |= 0;
         if (cache = (-128 <= value && value < 128)) {
+            // 只缓存-128到128之间的结果
             cachedObj = INT_CACHE[value];
             if (cachedObj)
                 return cachedObj;
