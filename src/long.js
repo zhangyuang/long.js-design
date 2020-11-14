@@ -120,6 +120,7 @@ var UINT_CACHE = {};
  */
 function fromInt(value, unsigned) {
     // 32 位数转 long类型
+    // 对超出32位数的情况以及负数的情况都做了特殊处理
     // Long { low: 16777216, high: 0, unsigned: false }
     var obj, cachedObj, cache;
     if (unsigned) {
@@ -139,6 +140,7 @@ function fromInt(value, unsigned) {
         return obj;
     } else {
         // 有符号数
+        // 如果value大于2147483647则得到的结果为负数 2147483648 Long { low: -2147483648, high: -1, unsigned: false }
         value |= 0;
         if (cache = (-128 <= value && value < 128)) {
             // 只缓存-128到128之间的结果
@@ -160,7 +162,7 @@ function fromInt(value, unsigned) {
  * @param {boolean=} unsigned Whether unsigned or not, defaults to signed
  * @returns {!Long} The corresponding Long value
  */
-Long.fromInt = fromInt;
+Long.fromInt = fromInt; // 给定32位数，返回long类型，默认是有符号数
 
 /**
  * @param {number} value
@@ -170,21 +172,28 @@ Long.fromInt = fromInt;
  */
 function fromNumber(value, unsigned) {
     if (isNaN(value))
+    // 不合法数字返回有符号0/无符号0
         return unsigned ? UZERO : ZERO;
     if (unsigned) {
         if (value < 0)
+        // 如果是无符号且传入负数则返回0
             return UZERO;
         if (value >= TWO_PWR_64_DBL)
+        // 如果数字大于等于 Math.pow(2,64) 即64位无符号数能表示的最大值 Math.pow(2,64)-1
+        // 返回最大的无符号数 即 fromBits(0xFFFFFFFF|0, 0xFFFFFFFF|0, true); Long { low: -1, high: -1, unsigned: true }
             return MAX_UNSIGNED_VALUE;
     } else {
+        // 有符号数最大值是Math.pow(2,63)-1最小值是-Math.pow(2,63)
         if (value <= -TWO_PWR_63_DBL)
-            return MIN_VALUE;
-        if (value + 1 >= TWO_PWR_63_DBL)
-            return MAX_VALUE;
+            return MIN_VALUE; // fromBits(0, 0x80000000|0, false); Long {low: 0, high: -2147483648, unsigned: false}
+        // if (value + 1 >= TWO_PWR_63_DBL)
+        //     return MAX_VALUE;
+        if (value >= TWO_PWR_63_DBL - 1) // 这里改成 -1 更容易理解
+        return MAX_VALUE; // fromBits(0xFFFFFFFF, 0x7FFFFFFF|0, false); Long {low: -1, high: 2147483647, unsigned: false}
     }
     if (value < 0)
-        return fromNumber(-value, unsigned).neg();
-    return fromBits((value % TWO_PWR_32_DBL) | 0, (value / TWO_PWR_32_DBL) | 0, unsigned);
+        return fromNumber(-value, unsigned).neg(); // 如果是负数则先转换为正数再取反+1求对应的补码
+    return fromBits((value % TWO_PWR_32_DBL) | 0, (value / TWO_PWR_32_DBL) | 0, unsigned); // 分成2个32位有符号数来表示
 }
 
 /**
@@ -194,7 +203,7 @@ function fromNumber(value, unsigned) {
  * @param {boolean=} unsigned Whether unsigned or not, defaults to signed
  * @returns {!Long} The corresponding Long value
  */
-Long.fromNumber = fromNumber;
+Long.fromNumber = fromNumber; // 从给定的数字返回Long类型，如果数字不是 finite 则返回0
 
 /**
  * @param {number} lowBits
@@ -421,7 +430,7 @@ Long.NEG_ONE = NEG_ONE;
  * @type {!Long}
  * @inner
  */
-var MAX_VALUE = fromBits(0xFFFFFFFF|0, 0x7FFFFFFF|0, false);
+var MAX_VALUE = fromBits(0xFFFFFFFF|0, 0x7FFFFFFF|0, false); // 有符号数最大值，低位都是1，高位保留一位符号位0所以是0x7fffffff
 
 /**
  * Maximum signed value.
@@ -805,7 +814,7 @@ LongPrototype.comp = LongPrototype.compare;
 LongPrototype.negate = function negate() {
     if (!this.unsigned && this.eq(MIN_VALUE))
         return MIN_VALUE;
-    return this.not().add(ONE);
+    return this.not().add(ONE); // 取反+1，原码->补码
 };
 
 /**
@@ -822,15 +831,18 @@ LongPrototype.neg = LongPrototype.negate;
  * @returns {!Long} Sum
  */
 LongPrototype.add = function add(addend) {
+    // Long 对象相加
+    // 把每个64位对象分成4块。每16位为一块
+    // 如果不分块32位为一块，当结果溢出时会丢失进位
     if (!isLong(addend))
         addend = fromValue(addend);
 
     // Divide each number into 4 chunks of 16 bits, and then sum the chunks.
 
-    var a48 = this.high >>> 16;
-    var a32 = this.high & 0xFFFF;
-    var a16 = this.low >>> 16;
-    var a00 = this.low & 0xFFFF;
+    var a48 = this.high >>> 16; // 得到高位的前16位
+    var a32 = this.high & 0xFFFF; // 得到高位的后16位
+    var a16 = this.low >>> 16; // 得到低位的前16位
+    var a00 = this.low & 0xFFFF; // 得到低位的后16位
 
     var b48 = addend.high >>> 16;
     var b32 = addend.high & 0xFFFF;
@@ -839,9 +851,9 @@ LongPrototype.add = function add(addend) {
 
     var c48 = 0, c32 = 0, c16 = 0, c00 = 0;
     c00 += a00 + b00;
-    c16 += c00 >>> 16;
-    c00 &= 0xFFFF;
-    c16 += a16 + b16;
+    c16 += c00 >>> 16; // 低位后16位相加，然后右移16位。只保留超过16位的进位
+    c00 &= 0xFFFF; // 只保留后16位
+    c16 += a16 + b16; // 同样重复上述操作。每次对16位进行运算。保留进位，同时本身只保留16位
     c32 += c16 >>> 16;
     c16 &= 0xFFFF;
     c32 += a32 + b32;
@@ -849,6 +861,7 @@ LongPrototype.add = function add(addend) {
     c32 &= 0xFFFF;
     c48 += a48 + b48;
     c48 &= 0xFFFF;
+    // 低位的前16位左移然后与上低位的后16位，得到一个正确的32位有符号数
     return fromBits((c16 << 16) | c00, (c48 << 16) | c32, this.unsigned);
 };
 
