@@ -125,7 +125,7 @@ function fromInt(value, unsigned) {
     var obj, cachedObj, cache;
     if (unsigned) {
         // 无符号数
-        value >>>= 0; // 无符号右移，如果输入的是负数，则此处都会变为正数。-1>>>0 = 4294967295
+        value >>>= 0; // 无符号右移0保证得到的是无符号数，
         if (cache = (0 <= value && value < 256)) {
             // 只缓存0-256之间的结果
             cachedObj = UINT_CACHE[value];
@@ -133,7 +133,7 @@ function fromInt(value, unsigned) {
                 return cachedObj;
         }
         // 这里｜0是因为位运算会转成32位有符号数补码在进行计算。
-        // 如果value大于2147483647则得到的结果为负数。相当于把本来的数字又给还原出来了
+        // 保证得到的数字的正负值的正确性如果超出 Math.pow(2,31) -1 则为负数
         obj = fromBits(value, (value | 0) < 0 ? -1 : 0, true); 
         if (cache)
             UINT_CACHE[value] = obj;
@@ -186,13 +186,11 @@ function fromNumber(value, unsigned) {
         // 有符号数最大值是Math.pow(2,63)-1最小值是-Math.pow(2,63)
         if (value <= -TWO_PWR_63_DBL)
             return MIN_VALUE; // fromBits(0, 0x80000000|0, false); Long {low: 0, high: -2147483648, unsigned: false}
-        // if (value + 1 >= TWO_PWR_63_DBL)
-        //     return MAX_VALUE;
         if (value >= TWO_PWR_63_DBL - 1) // 这里改成 -1 更容易理解
-        return MAX_VALUE; // fromBits(0xFFFFFFFF, 0x7FFFFFFF|0, false); Long {low: -1, high: 2147483647, unsigned: false}
+            return MAX_VALUE; // fromBits(0xFFFFFFFF, 0x7FFFFFFF|0, false); Long {low: -1, high: 2147483647, unsigned: false}
     }
     if (value < 0)
-        return fromNumber(-value, unsigned).neg(); // 如果是负数则先转换为正数再取反+1求对应的补码
+        return fromNumber(-value, unsigned).neg(); // 如果是负数则先转换为正数再取反+1
     return fromBits((value % TWO_PWR_32_DBL) | 0, (value / TWO_PWR_32_DBL) | 0, unsigned); // 分成2个32位有符号数来表示
 }
 
@@ -246,40 +244,43 @@ var pow_dbl = Math.pow; // Used 4 times (4*8 to 15+4)
 function fromString(str, unsigned, radix) {
     if (str.length === 0)
         throw Error('empty string');
-    if (str === "NaN" || str === "Infinity" || str === "+Infinity" || str === "-Infinity")
+    if (str === "NaN" || str === "Infinity" || str === "+Infinity" || str === "-Infinity") // 非法字符串返回0
         return ZERO;
     if (typeof unsigned === 'number') {
+        // 输入的无符号标志为number则赋值给radix
         // For goog.math.long compatibility
         radix = unsigned,
         unsigned = false;
     } else {
         unsigned = !! unsigned;
     }
-    radix = radix || 10;
+    radix = radix || 10; // 默认是10进制
     if (radix < 2 || 36 < radix)
         throw RangeError('radix');
 
     var p;
-    if ((p = str.indexOf('-')) > 0)
+    if ((p = str.indexOf('-')) > 0) // 如果字符串包含 - 则抛错
         throw Error('interior hyphen');
     else if (p === 0) {
+        // 如果是负数，则返回对应正数的取反+1值
         return fromString(str.substring(1), unsigned, radix).neg();
     }
 
     // Do several (8) digits each time through the loop, so as to
     // minimize the calls to the very expensive emulated div.
-    var radixToPower = fromNumber(pow_dbl(radix, 8));
-
+    var radixToPower = fromNumber(pow_dbl(radix, 8)); // Math.pow(radix, 8)
     var result = ZERO;
     for (var i = 0; i < str.length; i += 8) {
-        var size = Math.min(8, str.length - i),
-            value = parseInt(str.substring(i, i + size), radix);
+        var size = Math.min(8, str.length - i), // 取剩下的长度和8的更小值
+            value = parseInt(str.substring(i, i + size), radix); // 每次处理8位字符串转换为number类型如果不足8位则取剩下的所有字符
         if (size < 8) {
-            var power = fromNumber(pow_dbl(radix, size));
-            result = result.mul(power).add(fromNumber(value));
+            var power = fromNumber(pow_dbl(radix, size)); //如果剩下的数字不足8位，则先乘以剩下的数字的位数
+            result = result.mul(power).add(fromNumber(value)); // 再把结果加上数字本身
         } else {
+            // 如果长度大于8则处理
+            // 之前处理的结果先乘以Long { low: 100000000, high: 0, unsigned: false }
             result = result.mul(radixToPower);
-            result = result.add(fromNumber(value));
+            result = result.add(fromNumber(value)); // 加上这次的数字
         }
     }
     result.unsigned = unsigned;
@@ -624,6 +625,7 @@ LongPrototype.isPositive = function isPositive() {
  * @returns {boolean}
  */
 LongPrototype.isOdd = function isOdd() {
+    // 是否是奇数
     return (this.low & 1) === 1;
 };
 
@@ -874,6 +876,7 @@ LongPrototype.add = function add(addend) {
 LongPrototype.subtract = function subtract(subtrahend) {
     if (!isLong(subtrahend))
         subtrahend = fromValue(subtrahend);
+    // 减去一个数等于加上一个数的补码，让符号位参与运算
     return this.add(subtrahend.neg());
 };
 
@@ -892,6 +895,8 @@ LongPrototype.sub = LongPrototype.subtract;
  * @returns {!Long} Product
  */
 LongPrototype.multiply = function multiply(multiplier) {
+
+    // Long 类型相乘
     if (this.isZero())
         return ZERO;
     if (!isLong(multiplier))
@@ -899,6 +904,7 @@ LongPrototype.multiply = function multiply(multiplier) {
 
     // use wasm support if present
     if (wasm) {
+        // 使用wasm提升性能
         var low = wasm["mul"](this.low,
                               this.high,
                               multiplier.low,
@@ -907,8 +913,10 @@ LongPrototype.multiply = function multiply(multiplier) {
     }
 
     if (multiplier.isZero())
+    // 被乘数是0则返回0
         return ZERO;
     if (this.eq(MIN_VALUE))
+    // 如果被乘数是奇数则返回最小值，否则返回0
         return multiplier.isOdd() ? MIN_VALUE : ZERO;
     if (multiplier.eq(MIN_VALUE))
         return this.isOdd() ? MIN_VALUE : ZERO;
@@ -927,9 +935,9 @@ LongPrototype.multiply = function multiply(multiplier) {
 
     // Divide each long into 4 chunks of 16 bits, and then add up 4x4 products.
     // We can skip products that would overflow.
-
-    var a48 = this.high >>> 16;
-    var a32 = this.high & 0xFFFF;
+    // 同样把 Long 对象分为4块
+    var a48 = this.high >>> 16; // 高位的前16位
+    var a32 = this.high & 0xFFFF; // 高位的后16位
     var a16 = this.low >>> 16;
     var a00 = this.low & 0xFFFF;
 
@@ -940,10 +948,10 @@ LongPrototype.multiply = function multiply(multiplier) {
 
     var c48 = 0, c32 = 0, c16 = 0, c00 = 0;
     c00 += a00 * b00;
-    c16 += c00 >>> 16;
-    c00 &= 0xFFFF;
-    c16 += a16 * b00;
-    c32 += c16 >>> 16;
+    c16 += c00 >>> 16; // c16默认为加上低位后16位相乘的进位
+    c00 &= 0xFFFF; // 只保留后16位
+    c16 += a16 * b00; // 被乘数的后16位与乘数的前16位相乘并且加上之前的进位
+    c32 += c16 >>> 16; // 加上结果的进位
     c16 &= 0xFFFF;
     c16 += a00 * b16;
     c32 += c16 >>> 16;
@@ -957,6 +965,8 @@ LongPrototype.multiply = function multiply(multiplier) {
     c32 += a00 * b32;
     c48 += c32 >>> 16;
     c32 &= 0xFFFF;
+    // 高位的前16位，再加上前面的进位之后再加上本值。溢出的进位则舍去不考虑。
+    // 因为最终的结果还是 4 chunks组成的对象。所以不需要考虑 a48 * b16 这样的结果，因为超出了64位的范畴会舍去
     c48 += a48 * b00 + a32 * b16 + a16 * b32 + a00 * b48;
     c48 &= 0xFFFF;
     return fromBits((c16 << 16) | c00, (c48 << 16) | c32, this.unsigned);
